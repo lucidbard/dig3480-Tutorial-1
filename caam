@@ -1,0 +1,562 @@
+#!/usr/bin/env bash
+version=7
+source .env
+reponame=`basename "$PWD"`
+username=`echo ${reponame} | cut -c$((${#assignment}+2))-`
+# First, let's add the .bin directory to the path.
+output=`git status --porcelain 2>/dev/null`
+gitstatus=$?
+rm -f Assets/InitTestScene* >/dev/null
+if [ $# -ge 1 ]; then
+  if [ ! -f ".ucf/.secret" -a $1 != 'register' -a $1 != 'reset' ]; then
+    echo "This directory has not been set up yet."
+    echo ""
+    echo "You can register and set up this assignment by entering './caam register' at the terminal"
+    exit 0
+  fi
+  secret=`cat .ucf/.secret 2>/dev/null`
+  output=`curl -s --header "secret: $secret" --header "Content-Type: application/json" -w"%{http_code}" -X POST --data "[\"$1\", \"$2\"]" -o /dev/null  https://plato.mrl.ai:8081/git/$version `
+  if [ $? -ne 0 ]; then
+    echo "Cannot connect to the server. Check your connection or contact the instructor."
+    exit 0;
+  else
+    if [ $output = 426 ]; then
+      curl -s -o caam https://plato.mrl.ai:8081/git/caam
+      git add caam
+      git commit -m "Caam upgrade"
+      ./caam upgrade $1
+      exit 0;
+    fi
+  fi
+  if [[ $1 = "upgrade" ]]; then
+    echo "Upgrading caam script"
+    # ==========================================================================
+    # Version 3 ================================================================
+    # ==========================================================================
+    # Add keys to inputactions
+    out=`grep '"path": "W"' Assets/RollABallControls.inputactions`
+    if [[ ! -z "$out" ]]; then
+      echo "Fixing..."
+        # Assets/RollABallControls.inputactions
+      sed -i -- 's/"path": "W"/"path": "<Keyboard>\/\#(W)"/' Assets/RollABallControls.inputactions
+      sed -i -- 's/"path": "S"/"path": "<Keyboard>\/\#(S)"/' Assets/RollABallControls.inputactions
+      sed -i -- 's/"path": "A"/"path": "<Keyboard>\/\#(A)"/' Assets/RollABallControls.inputactions
+      sed -i -- 's/"path": "D"/"path": "<Keyboard>\/\#(D)"/' Assets/RollABallControls.inputactions
+      echo "Fixed Input Actions"
+    fi
+    # Make CAAM package to only be present in the editor
+    out=`grep '"includePlatforms": \[\]' Packages/CAAM/Editor/edu.ucf.caam.Editor.asmdef`
+    if [[ ! -z "$out" ]]; then
+      echo "CAAM package made editor only."
+      sed -i -- 's/"includePlatforms": \[\]/"includePlatforms": [ "Editor" ]/' Packages/CAAM/Editor/edu.ucf.caam.Editor.asmdef
+
+    fi
+    # Fix project settings to be 3D by default
+    out=`grep "m_DefaultBehaviorMode: 1" ProjectSettings/EditorSettings.asset`
+    if [[ ! -z "$out" ]]; then
+      sed -i -- 's/m_DefaultBehaviorMode: 1/m_DefaultBehaviorMode: 0/' ProjectSettings/EditorSettings.asset
+      echo "Making project 3D default"
+    fi
+
+    # Change product name to Roll A Ball
+    out=`grep "productName: Hello World" ProjectSettings/ProjectSettings.asset`
+    if [[ ! -z "$out" ]]; then
+      sed -i -- 's/productName: Hello World/productName: Roll a Ball/' ProjectSettings/ProjectSettings.asset
+      echo "Renaming project..."
+    fi
+    echo ""
+    # ============================================================================
+    # Version 3 ================================================================
+    # ==========================================================================
+
+    # Update project files from server.
+    
+    # Download and install
+    # EditorSettings.asset
+    out=`grep 'm_DefaultBehaviorMode: 1' ProjectSettings/EditorSettings.asset`
+    if [[ ! -z $out ]]; then 
+      curl -s -o ProjectSettings/EditorSettings.asset https://plato.mrl.ai:8081/git/$assignmentid/ProjectSettings/EditorSettings.asset
+    fi 
+    #   m_DefaultBehaviorMode: 1 / m_DefaultBehaviorMode: 0
+    #   m_SpritePackerMode: 4 / m_SpritePackerMode: 0
+    #   m_UseLegacyProbeSampleCount: 1 /   m_UseLegacyProbeSampleCount: 0
+
+    # Update Project Settings to Enable Lighting Etc.
+
+## ProjectSettings
+  # gpuSkinning: 0 /   gpuSkinning: 1
+
+    # Make tests more forgiving for Count
+  # clonedFromGUID: 5f34be1353de5cf4398729fda238591b
+  # templatePackageId: com.unity.template.2d@3.3.0
+  #   metroPackageName: Template_2D /   metroPackageName: Template_3D
+  #   metroApplicationDescription: Template_2D /   metroApplicationDescription: Template_3D
+  #   m_CurrentQuality: 3 /   m_CurrentQuality: 5
+
+  # maximumLODLevel: 0
+
+# maximumLODLevel: 0
+    # streamingMipmapsActive: 0
+    # streamingMipmapsAddAllCameras: 1
+    # streamingMipmapsMemoryBudget: 512
+    # streamingMipmapsRenderersPerFrame: 512
+    # streamingMipmapsMaxLevelReduction: 2
+    # streamingMipmapsMaxFileIORequests: 1024
+
+    # ==========================================================================
+    # Version 5 ================================================================
+    # ==========================================================================
+    # Download updated test and install it.
+
+    curl -s -o .ucf/files/Runtime/TestSetup https://plato.mrl.ai:8081/git/$assignmentid/files/Runtime/TestSetup
+
+    # Version 7
+    curl -s -o Packages/CAAM/Editor/edu.ucf.caam.Editor.asmdef https://plato.mrl.ai:8081/git/Packages/CAAM/Editor/edu.ucf.caam.Editor.asmdef
+
+    if [[ -f Assets/Tests/Runtime/TestSetup.cs ]]; then
+      ./caam test 1
+    fi
+    echo "Fixes complete... continuing...."
+    ./caam $2 $3
+    exit;
+  elif [[ $1 = "test" && -z $2 ]]; then
+    echo "Please specify a stage to set up: ./caam test <stage>:"
+    echo " - 1: After the first video, with PlayerController, CameraController, and MiniGame scene."
+  elif [[ $1 = "test" && ! -z $2 ]]; then
+    echo "Setting up test frameworks!"
+    mkdir -p Assets/Tests/Runtime
+    cp .ucf/files/Runtime/PlayTests.asmdef* Assets/Tests/Runtime
+    case $2 in
+      "rm")
+        rm -rf Assets/Tests
+      ;;
+      "1")
+        # First, check that the first set of files necessary are present:
+        # -
+        if [[ ! -f Assets/Scenes/MiniGame.unity ]]; then 
+          echo "Error: Need MiniGame scene in Scenes subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f Assets/Scripts/PlayerController.cs ]]; then 
+          echo "Error: Need PlayerController.cs in Scripts subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f Assets/Scripts/CameraController.cs ]]; then 
+          echo "Error: Need CameraController.cs in Scripts subfolder of Assets."
+          exit 0;
+        fi
+        cp .ucf/files/Runtime/TestSetup Assets/Tests/Runtime/TestSetup.cs
+        echo "Setting up first set of tests!"
+      ;;
+      "2")
+        # Second, check that the second set of files necessary are present:
+        # -
+        if [[ ! -f "Assets/Prefabs/Pick Up.prefab" ]]; then 
+          echo "Error: Need \"Pick Up\" prefab in Prefabs subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f "Assets/Scripts/Rotator.cs" ]]; then 
+          echo "Error: Need Rotator.cs script in Script subfolder of Assets."
+          exit 0;
+        fi
+        cp .ucf/files/Runtime/TestPickups Assets/Tests/Runtime/TestPickups.cs
+        echo "Setting up second set of tests!"
+      ;;
+      "3")
+        # Finally, check that the final set of files necessary are present:
+        # -
+        if [[ ! -f "Assets/Prefabs/Pick Up.prefab" ]]; then 
+          echo "Error: Need MiniGame scene in Scenes subfolder of Assets."
+          exit 0;
+        fi
+        PlayerControllerText=`cat Assets/Scripts/PlayerController.cs`
+        if [[ ! $PlayerControllerText =~ countText ]]; then
+          echo "Error: PlayerController must have \"countText\" variable."
+        fi
+        echo "Setting up third set of tests!"
+        cp .ucf/files/Runtime/TestScoring Assets/Tests/Runtime/TestScoring.cs
+      ;;
+      "all")
+        echo "All!"
+        if [[ ! -f Assets/Scenes/MiniGame.unity ]]; then 
+          echo "Error: Need MiniGame scene in Scenes subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f Assets/Scripts/PlayerController.cs ]]; then 
+          echo "Error: Need PlayerController.cs Script to Scripts subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f Assets/Scripts/CameraController.cs ]]; then 
+          echo "Error: Need CameraController.cs Script to Scripts subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f "Assets/Prefabs/Pick Up.prefab" ]]; then 
+          echo "Error: Need \"Pick Up\" prefab in Prefabs subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f "Assets/Scripts/Rotator.cs" ]]; then 
+          echo "Error: Need Rotator.cs script in Script subfolder of Assets."
+          exit 0;
+        fi
+        if [[ ! -f "Assets/Prefabs/Pick Up.prefab" ]]; then 
+          echo "Error: Need MiniGame scene in Scenes subfolder of Assets."
+          exit 0;
+        fi
+        PlayerControllerText=`cat Assets/Scripts/PlayerController.cs`
+        if [[ ! $PlayerControllerText =~ countText ]]; then
+          echo "Error: PlayerController must have \"countText\" variable."
+        fi
+        cp .ucf/files/Runtime/TestSetup Assets/Tests/Runtime/TestSetup.cs
+        cp .ucf/files/Runtime/TestPickups Assets/Tests/Runtime/TestPickups.cs
+        cp .ucf/files/Runtime/TestScoring Assets/Tests/Runtime/TestScoring.cs
+      ;;
+    esac
+    git add -A
+    git commit -m "Adding test files"
+    git push
+    echo "All done, ready to test!"
+  elif [ $1 == 'register' -a ! -f ".ucf/.secret" ]; then
+    cat .ucf/banner.txt
+    # Check if the student has previously been registered...
+    if [ $gitstatus -eq 0 ]; then
+      secret=`curl https://plato.mrl.ai:8081/git/registered/$username/$reponame/$assignmentid 2>/dev/null`
+      if [ $secret == "Registered" ]; then
+        echo "This repository has already been registered. If you think this is in error, send a message to the instructor."
+      elif [ $secret == "Unregistered" ]; then
+        echo "Greetings! This program will register your folder for DIG3480."
+        # Check for extensions installed.
+        out=`which code 2>&1 >/dev/null`
+        if [ $? != 0 ]; then
+          echo ""
+          echo "NOTICE: You must add VS Code to your path, then restart the program."
+          echo "For OSX, this involves this command: "
+          echo ""
+          echo "Open Visual Studio Code and press Command + Shift + P or F1 then type Shell in command palette now you are able to find this option like Shell Command : Install code in PATH from suggested list in command palette." 
+          echo "Select that options."
+          echo ""
+          echo "See https://stackoverflow.com/questions/30065227/run-open-vscode-from-mac-terminal" 
+          exit 0;
+        fi
+        extensions=`code --list-extensions`
+        desired_extensions=("ms-dotnettools.csharp" "ms-vsliveshare.vsliveshare" "ms-vsliveshare.vsliveshare-pack" "Unity.unity-debug" "zeitnergmbh.auto-git" "Leopotam.csharpfixformat")
+        for i in ${desired_extensions[@]}
+        do
+          echo $extensions | grep -o $i >/dev/null
+          if [ $? != 0 ]; then
+            echo "Missing extension: " $i
+            echo "Install this extension and then rerun to register."
+            exit;
+          fi  
+        done
+        echo ""
+        echo "Like many programs, it performs work by taking in input from the user (you) and performing actions."
+        echo "In Unity, these are performed once per frame, but console applications don't render new data each frame."
+        echo ""
+        echo "At any point before this program finishes, you can cancel it by holding the control key and pressing c"
+        echo "This will terminate most shell programs run at the command line."
+        echo ""
+        echo "Go ahead and try it, you can come right back!"
+        sleep .5
+        read -n 1 -r -s -p $'Press any key to continue...\n'
+        clear
+        echo "Still here? Ok, let's start."
+        echo "First, could you tell me your full name? If you have a preferred nickname, include that."
+        echo "Type your name while this terminal is selected, and when you are done, press the return key."
+        read -p '> ' studentname 
+        echo "Nice to meet you $studentname!"
+        read -p "Did I get that right? [y/N]> " response
+        case "$response" in
+          [yY][eE][sS]|[yY]) 
+              echo "Great!"
+              ;;
+          *)
+              while :
+              do
+                echo "Let's try it again -- what would you like to be called by?"
+                read -p '> ' studentname 
+                echo "Nice to meet you $studentname!"
+                read -p "Did I get that right? [y/N]> " response
+                case "$response" in
+                  [yY][eE][sS]|[yY]) 
+                      echo "Great."
+                      break
+                      ;;
+                  *)
+                      echo "Sorry!"
+                      ;;
+                esac
+              done
+            ;;
+        esac
+        pronouns=("they/them/theirs" "she/her/hers" "he/his/him" "Something else...")
+        while :
+        do 
+          echo "What are your preferred pronouns?"
+          count=0
+          for ((i = 0; i < ${#pronouns[@]}; i++)) 
+          do
+            echo "$i: ${pronouns[$i]}"
+          done
+          read -p "Selection (0-3): " pronoun_choice
+          if [ $pronoun_choice -ge 0 -a $pronoun_choice -le 2 ]; then
+            break 
+          elif [ $pronoun_choice -eq 3 ]; then
+                read -p "What are they? (separate by /)> " newpronouns
+                echo "You chose: $newpronouns."
+                read -p "Did I get that right? [y/N]> " response
+                case "$response" in
+                  [yY][eE][sS]|[yY]) 
+                      echo "Great."
+                      pronouns[$pronoun_choice]=$newpronouns
+                      break
+                      ;;
+                  *)
+                      echo "I'm sorry. Let's try again."
+                      ;;
+                esac
+          else
+                echo "Please enter either 0, 1, 2 or 3.:"
+          fi
+        done
+        echo "Thank you, let's continue!" 
+        while :
+        do
+          echo "Please enter your github username here followed by pressing the return key:"
+          read -p '> ' github_username 
+          if [ $github_username == $username ]; then
+            break
+          fi
+        done
+
+        unameOut="$(uname -s)"
+        case "${unameOut}" in
+            Linux*)     machine=Linux;;
+            Darwin*)    machine=Mac;;
+            CYGWIN*)    machine=Cygwin;;
+            MINGW*)     machine=MinGw;;
+            *)          machine="UNKNOWN:${unameOut}"
+        esac
+        IFS='' read -r -d '' String  <<EOF
+{
+  "name": "$studentname",
+  "pronouns": "${pronouns[$pronoun_choice]}",
+  "OS": "$machine", 
+  "username":"$username"
+}
+EOF
+        secret=`curl -H "Content-Type: application/json" \
+          -X POST --data "${String}" \
+          https://plato.mrl.ai:8081/git/register/$reponame 2>/dev/null`
+        secret=${secret//$'\n'/}
+        if [ $? != 0 ]; then
+          echo "Server error! Try again."
+        fi
+      else
+        echo "Welcome back! Let's just set up this repo for submission."
+      fi
+      echo $secret > .ucf/.secret
+      cat .ucf/.new-classroom.yml > .github/workflows/classroom.yml
+      cat .ucf/autogit.json > .autogit/autogit.json
+      echo "Configuring GitHub Username and Email for this repository..."
+      ghun=`git config user.name 2>/dev/null`
+      ghem=`git config user.email 2>/dev/null`
+      if [ ${#ghun} -le 2 ]; then
+        git config user.name $username
+      fi
+      if [ ${#ghem} -le 2 ]; then
+        git config user.email "knight@ucf.edu"
+      fi
+      git add .ucf/.secret >/dev/null 2>&1
+      git commit -m "Secret" >/dev/null 2>&1
+      git checkout -b working 
+      git push -u origin working
+      echo "All done!" 
+    else
+      echo "Problem with git repository. Did you clone it?"
+    fi
+    stat_exit=`stat --printf="%s" .ucf/.secret`
+    if [ `git branch --show-current` = 'working' -a "$stat_exit" = '49' ]; then
+      # Verify secret works with server....
+      echo "Congratulations! You have now successfully set up this directory as your repository."
+      if [ ! -z $firstTime ]; then
+        echo "Once the instructor has verified your information, you will receive full credit."
+      fi
+    else
+      echo "An error may have occurred during registration. Contact the instructor for more assistance."
+    fi
+  elif [ $1 == 'register' -a -f ".ucf/.secret" ]; then
+    # Confirm that the repo is registered
+    echo "You have already registered this folder. If you need help, contact the instructor."
+  else
+    secret=`cat .ucf/.secret`
+  fi
+  remaining=`curl -s --header "Content-Type: application/json" \
+    --header "secret: $secret" \
+    https://plato.mrl.ai:8081/git/status/UCF-GaiM/$reponame/submissions 2>/dev/null`
+  # --data '{"username":"xyz","password":"xyz"}' \
+  # --request POST \
+  if [[ $1 == 'check' ]]; then
+    echo "You have $remaining remaining submissions today."
+  elif [[ "$1" == 'results' ]]; then 
+    # Kill the spinner on any signal, including our own exit.
+    echo "https://plato.mrl.ai:8081/git/status/UCF-GaiM/$reponame/results"
+    results=`curl -s --header "Content-Type: application/json" \
+          --header "secret: $secret" \
+          https://plato.mrl.ai:8081/git/status/UCF-GaiM/$reponame/results -o ./.ucf/results 2>/dev/null`
+    echo "Results:"
+    echo ""
+    cat .ucf/results
+  elif [ "$1" == 'submit' ]; then
+    if [[ $assignmentid -eq 1 ]]; then 
+      # Check if the MiniGame is the correct case.
+      echo "Preflight checks!"
+      build=`grep -i '    path: Assets/Scenes/MiniGame.unity' ProjectSettings/EditorBuildSettings.asset`
+      location=$(ls -1 Assets/Scenes/*.unity | grep -i 'minigame')
+      if [[ ! "$build" == "    path: Assets/Scenes/MiniGame.unity" || ! "$location" == "Assets/Scenes/MiniGame.unity" ]]; then
+        if [[ ! "$build" == "    path: Assets/Scenes/MiniGame.unity" && "$location" == "Assets/Scenes/MiniGame.unity" ]]; then
+          # Attempt to correct the build using sed
+          sed -i -- "s#$build#    path: Assets/Scenes/MiniGame.unity#" ProjectSettings/EditorBuildSettings.asset
+          build=`grep -i 'Assets/Scenes/MiniGame.unity' ProjectSettings/EditorBuildSettings.asset`
+        fi
+        if [[ ! "$build" == "    path: Assets/Scenes/MiniGame.unity" || ! "$location" == "Assets/Scenes/MiniGame.unity" ]]; then
+          echo "No scene in build!"
+          echo "Make sure your scene is named \"MiniGame\" (with a capital G) and not \"Minigame\""
+          echo "Currently, your scene is named: $location"
+          echo "Then be sure to save your Unity Project."
+          exit 0;
+        fi        
+      fi
+      if [[ ! -f "Assets/Prefabs/Pick Up.prefab" ]]; then
+        echo "No prefab named \"Pick Up\" found. Make sure it is named exactly that."
+        exit 0;
+      fi
+      pickups=`grep 'm_Name: Pick Ups' Assets/Scenes/MiniGame.unity`
+      if [[  -z $pickups ]]; then
+        echo "No \"Pick Ups\" Game Object container in MiniGame scene!"
+        echo "Make sure your Pick Up prefabs are in it."
+        echo "Then be sure to save your Unity Project."
+        exit 0;
+      fi
+    else
+      echo "Wrong assignment!"
+    fi
+    echo "All checks passed!"
+    branch=`git branch --show-current`
+    if [[ ! -z $branch && $branch = 'master' ]]; then
+      git add -A
+      git commit -m "Error: Not on working"
+      git checkout working
+      git add -A
+      git commit -m "Working"
+      git merge master
+      if [ `git branch --show-current` = 'master' ]; then
+        echo "Error: git issue, contact instructor"
+        exit 0;
+      fi
+    fi
+    if [ -f '.ucf/.compilerError' ]; then
+      echo "You still have compiler errors:"
+      echo ""
+      echo "========================================"
+      cat '.ucf/.compilerError'
+      echo "========================================"
+      echo "Fix those errors and submit then."
+      exit 0
+    elif [ "$remaining" = "Not Approved" ]; then
+      echo "You haven't been approved yet. Please wait a bit longer or contact the instructor."
+      exit 0
+    else
+      echo "Preparing for Submission! So Exciting!"
+      echo ""
+      echo "You have $remaining remaining submissions today."
+      if [ $remaining -gt 0 ]; then
+        read -p "Would you like to use a submission? [y/N]> " response
+        case "$response" in
+          [yY][eE][sS]|[yY]) 
+            echo "Great! Getting your submission ready."
+            echo "Do not press any keys or exit the program until complete!"
+            ;;
+          *)
+            echo "Ok, feel free to submit later!"
+            exit 0
+            ;;
+        esac
+        ./caam test all
+        if [ `git status --porcelain | wc -l` -gt 0 ]; then
+          git add -A >/dev/null 2>&1
+          git commit -m "Submission commit"
+          git push
+        fi
+        git checkout master
+        git merge --squash -X theirs working 
+        dt=$(date '+%d/%m/%Y %H:%M:%S'); 
+        git commit -m " submission on $dt"
+        git push
+        git checkout working
+        # Wait a second.....
+        sleep 1
+        # Request results...
+        echo "Submission in queue. Please wait..."
+              
+        sleep 5
+      
+        # Kill the spinner on any signal, including our own exit.
+        curl -s --header "Content-Type: application/json" \
+          --header "secret: $secret" \
+          https://plato.mrl.ai:8081/git/status/UCF-GaiM/$reponame/results -o ./.ucf/results 2>/dev/null
+          out=`cat .ucf/results`
+        chk=$?
+        if [[ $out =~ "502 Bad Gateway" ]]; then
+          echo "Still processing... please be patient..."
+          sleep 5
+          curl -s --header "Content-Type: application/json" \
+            --header "secret: $secret" \
+            https://plato.mrl.ai:8081/git/status/UCF-GaiM/$reponame/results -o ./.ucf/results 2>/dev/null
+          out=`cat .ucf/results`
+          chk=$?
+        fi
+        if [[ $out =~ "502 Bad Gateway" ]]; then
+          echo "Still processing... please be patient..."
+          sleep 5
+          curl -s --header "Content-Type: application/json" \
+            --header "secret: $secret" \
+            https://plato.mrl.ai:8081/git/status/UCF-GaiM/$reponame/results -o ./.ucf/results 2>/dev/null
+          out=`cat .ucf/results`
+          chk=$?
+        fi
+
+        if [ ! $chk -eq 0 ]; then
+          echo "Submit failed. Contact the instructor."
+          exit 0;
+        else
+          echo "Results:"
+          echo ""
+          cat .ucf/results
+          # results=`"$powersh" .ucf/grade.ps1` 
+          remaining=`curl -s --header "Content-Type: application/json" \
+            --header "secret: $secret" \
+            https://plato.mrl.ai:8081/git/status/UCF-GaiM/$reponame/submissions 2>/dev/null`
+          echo ""
+          echo "Submission complete. You have ${remaining} submissions remaining."
+        fi
+      else
+        echo "No more submissions remaining today. Wait until tomorrow (12am)"
+      fi
+    fi
+  fi
+  exit 0
+else
+  echo "Computer as a Medium Script."
+  echo "usage: caam <command>"
+  echo ""
+  echo "These are the provided commands:"
+  echo "   register         Register this repository with DIG3480."
+  echo "   test <stage>     Add the test framework for the associated stage of the project."
+  echo "                    stage=1 MiniGame unity scene present w/ Playercontroller."
+  echo "                    stage=2 Pick Up prefab created."
+  echo "                    stage=3 Scoring complete."
+  echo "   check            Check how many submission remain for the day."
+  echo "   results          Check the most recent submission results."
+  echo "   submit           Use one of your daily submissions."
+  echo "   challenge        Use one of your daily submissions for this assignment's challenge."
+fi
